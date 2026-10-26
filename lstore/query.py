@@ -11,98 +11,95 @@ class Query:
     """
     def __init__(self, table):
         self.table = table
-        pass
+        
 
     
-    """
-    # internal Method
-    # Read a record with specified RID
-    # Returns True upon succesful deletion
-    # Return False if record doesn't exist or is locked due to 2PL
-    """
     def delete(self, primary_key):
-        pass
+        try:
+            rids = self.table.index.locate(self.table.key, primary_key)
+            if not rids:
+                return False
+            self.table.delete_record(rids[0])
+            return True
+        except Exception:
+            return False
     
     
-    """
-    # Insert a record with specified columns
-    # Return True upon succesful insertion
-    # Returns False if insert fails for whatever reason
-    """
     def insert(self, *columns):
-        schema_encoding = '0' * self.table.num_columns
-        pass
+        try:
+            if len(columns) != self.table.num_columns or any(c is None for c in columns):
+                return False
+            if self.table.index.locate(self.table.key, columns[self.table.key]):
+                return False
+            self.table.insert_record(list(columns))
+            return True
+        except Exception:
+            return False
 
     
-    """
-    # Read matching record with specified search key
-    # :param search_key: the value you want to search based on
-    # :param search_key_index: the column index you want to search based on
-    # :param projected_columns_index: what columns to return. array of 1 or 0 values.
-    # Returns a list of Record objects upon success
-    # Returns False if record locked by TPL
-    # Assume that select will never be called on a key that doesn't exist
-    """
+    
     def select(self, search_key, search_key_index, projected_columns_index):
-        pass
+        return self.select_version(search_key, search_key_index, projected_columns_index, 0)
 
     
-    """
-    # Read matching record with specified search key
-    # :param search_key: the value you want to search based on
-    # :param search_key_index: the column index you want to search based on
-    # :param projected_columns_index: what columns to return. array of 1 or 0 values.
-    # :param relative_version: the relative version of the record you need to retreive.
-    # Returns a list of Record objects upon success
-    # Returns False if record locked by TPL
-    # Assume that select will never be called on a key that doesn't exist
-    """
     def select_version(self, search_key, search_key_index, projected_columns_index, relative_version):
-        pass
+        try:
+            t = self.table
+            rids = t.index.locate(search_key_index, search_key)
+            if rids is None:                      # no index on that column: scan
+                rids = [rid for rid, v in t.scan_latest(search_key_index)
+                        if t.read_value(rid, search_key_index, relative_version) == search_key]
+            elif relative_version != 0 and t.col_updated[search_key_index]:
+                # index reflects the latest version; re-check the requested one
+                rids = [rid for rid, _ in t.scan_latest(search_key_index)
+                        if t.read_value(rid, search_key_index, relative_version) == search_key]
+            out = []
+            for rid in rids:
+                cols = t.read_record(rid, projected_columns_index, relative_version)
+                key = t.read_value(rid, t.key, relative_version)
+                out.append(Record(rid, key, cols))
+            return out
+        except Exception:
+            return False
 
-    
-    """
-    # Update a record with specified key and columns
-    # Returns True if update is succesful
-    # Returns False if no records exist with given key or if the target record cannot be accessed due to 2PL locking
-    """
+
     def update(self, primary_key, *columns):
-        pass
+        try:
+            t = self.table
+            if len(columns) != t.num_columns:
+                return False
+            rids = t.index.locate(t.key, primary_key)
+            if not rids:
+                return False
+            new_key = columns[t.key]
+            if new_key is not None and new_key != primary_key \
+                    and t.index.locate(t.key, new_key):
+                return False                      # would violate key uniqueness
+            t.update_record(rids[0], list(columns))
+            return True
+        except Exception:
+            return False
 
     
-    """
-    :param start_range: int         # Start of the key range to aggregate 
-    :param end_range: int           # End of the key range to aggregate 
-    :param aggregate_columns: int  # Index of desired column to aggregate
-    # this function is only called on the primary key.
-    # Returns the summation of the given range upon success
-    # Returns False if no record exists in the given range
-    """
+
     def sum(self, start_range, end_range, aggregate_column_index):
-        pass
+        return self.sum_version(start_range, end_range, aggregate_column_index, 0)
 
     
-    """
-    :param start_range: int         # Start of the key range to aggregate 
-    :param end_range: int           # End of the key range to aggregate 
-    :param aggregate_columns: int  # Index of desired column to aggregate
-    :param relative_version: the relative version of the record you need to retreive.
-    # this function is only called on the primary key.
-    # Returns the summation of the given range upon success
-    # Returns False if no record exists in the given range
-    """
+   
     def sum_version(self, start_range, end_range, aggregate_column_index, relative_version):
-        pass
+        try:
+            t = self.table
+            rids = t.index.locate_range(start_range, end_range, t.key)
+            if not rids:
+                return False
+            return sum(t.read_value(rid, aggregate_column_index, relative_version)
+                    for rid in rids)
+        except Exception:
+            return False
 
     
-    """
-    incremenets one column of the record
-    this implementation should work if your select and update queries already work
-    :param key: the primary of key of the record to increment
-    :param column: the column to increment
-    # Returns True is increment is successful
-    # Returns False if no record matches key or if target record is locked by 2PL.
-    """
+    
     def increment(self, key, column):
         r = self.select(key, self.table.key, [1] * self.table.num_columns)[0]
         if r is not False:
