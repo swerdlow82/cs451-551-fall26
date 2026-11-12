@@ -3,12 +3,6 @@ from lstore.index import Index
 
 
 class Query:
-    """
-    # Creates a Query object that can perform different queries on the specified table 
-    Queries that fail must return False
-    Queries that succeed should return the result or True
-    Any query that crashes (due to exceptions) should return False
-    """
     def __init__(self, table):
         self.table = table
         
@@ -46,11 +40,10 @@ class Query:
         try:
             t = self.table
             rids = t.index.locate(search_key_index, search_key)
-            if rids is None:                      # no index on that column: scan
+            if rids is None:                      
                 rids = [rid for rid, v in t.scan_latest(search_key_index)
                         if t.read_value(rid, search_key_index, relative_version) == search_key]
             elif relative_version != 0 and t.col_updated[search_key_index]:
-                # index reflects the latest version; re-check the requested one
                 rids = [rid for rid, _ in t.scan_latest(search_key_index)
                         if t.read_value(rid, search_key_index, relative_version) == search_key]
             out = []
@@ -74,7 +67,7 @@ class Query:
             new_key = columns[t.key]
             if new_key is not None and new_key != primary_key \
                     and t.index.locate(t.key, new_key):
-                return False                      # would violate key uniqueness
+                return False                      
             t.update_record(rids[0], list(columns))
             return True
         except Exception:
